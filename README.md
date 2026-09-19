@@ -100,3 +100,4 @@ spectre/
 ├── README.md           # Documentación del proyecto
 └── requirements.txt    # Dependencias de Python
 ```
+
