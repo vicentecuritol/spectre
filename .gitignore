@@ -1,0 +1,27 @@
+# Variables de entorno y secretos
+.env
+.env.*
+!.env.example
+
+# Caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# IDEs y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archivos de depuración y temporales
+test_scratch.py
+scratch/
+*.log
