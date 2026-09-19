@@ -27,3 +27,8 @@ PROFILE_README.md
 scratch/
 *.log
 
+# Base de conocimiento y notas personales
+payloads/*.txt
+payloads/*.md
+!payloads/ejemplo.txt
+

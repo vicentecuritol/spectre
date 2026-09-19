@@ -69,3 +69,4 @@ def execute_command_interactive(command: str) -> None:
         print("\033[90m---------------------------\033[0m")
     else:
         print("[!] Ejecución descartada.")
+

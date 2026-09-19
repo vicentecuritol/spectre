@@ -1,1 +1,0 @@
-El servidor secreto de pruebas interno tiene la IP 10.99.99.5. La contraseña por defecto del router del laboratorio es 'R0ut3rM4g1c'.
