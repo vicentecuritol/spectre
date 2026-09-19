@@ -1,4 +1,6 @@
 import os
+import json
+import urllib.request
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -15,10 +17,12 @@ client = OpenAI(
 )
 
 SYS_PROMPT = (
-    "Eres un CLI parser para administración de sistemas y desarrollo. "
-    "Devuelve ÚNICAMENTE el comando completo y directamente ejecutable en la terminal en texto plano puro "
-    "(por ejemplo: 'nmap -oN salida.txt <objetivo>', NUNCA devuelvas solo una bandera aislada como '-oN'). "
-    "Sin comillas, sin backticks (`) y sin bloques markdown. Cero explicaciones, cero saludos. Sé directo."
+    "Eres un CLI parser estricto para administración de sistemas y desarrollo. "
+    "Devuelve ÚNICAMENTE el comando completo y directamente ejecutable en la terminal. "
+    "Debes incluir siempre el binario, opciones y argumentos necesarios. "
+    "NUNCA devuelvas únicamente un flag o modificador aislado. "
+    "Responde estrictamente en texto plano puro, sin comillas, sin backticks (`) y sin formato markdown. "
+    "Cero explicaciones, cero saludos. Sé directo."
 )
 
 
@@ -29,7 +33,14 @@ def ask_model(prompt: str, context: str = ""):
     e inyecta el contexto relevante dentro del turno del usuario.
     """
     if context:
-        user_content = f"--- CONTEXTO RELEVANTE (NOTAS LOCALES) ---\n{context}\n------------------------------------------\nORDEN: {prompt}"
+        user_content = (
+            f"--- NOTAS LOCALES DE REFERENCIA ---\n"
+            f"{context}\n"
+            f"-----------------------------------\n"
+            f"Usa las notas locales si contienen la respuesta. Si la orden pide algo que no está en las notas, "
+            f"construye el comando correcto con tu conocimiento general.\n"
+            f"ORDEN: {prompt}"
+        )
     else:
         user_content = prompt
 
@@ -57,6 +68,47 @@ def ask_model(prompt: str, context: str = ""):
         stop=["<|im_end|>", "<|endoftext|>", "```\n\n", "ORDEN:", "\n\n\n\n"],
         extra_body=extra_body
     )
+
+
+def explain_command(command: str):
+    """Genera una explicación breve y concisa de los parámetros y banderas de un comando."""
+    explain_prompt = (
+        "Eres un experto en terminales y administración de sistemas. "
+        "Explica de forma muy breve y clara qué hace el siguiente comando y desglosa sintéticamente cada una de sus banderas o argumentos:\n\n"
+        f"Comando: {command}"
+    )
+    return client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content": explain_prompt}],
+        temperature=0.2,
+        max_tokens=350,
+        stream=True
+    )
+
+
+def set_model(new_model: str) -> str:
+    """Cambia el modelo activo en tiempo de ejecución."""
+    global MODEL
+    MODEL = new_model.strip()
+    return MODEL
+
+
+def list_available_models() -> list[str]:
+    """Consulta la API de Ollama para listar los modelos descargados localmente."""
+    is_local = any(host in BASE_URL.lower() for host in ("11434", "localhost", "127.0.0.1"))
+    if not is_local:
+        return []
+
+    try:
+        # La raíz de Ollama suele estar en http://localhost:11434
+        root_url = BASE_URL.replace("/v1", "")
+        tags_url = f"{root_url.rstrip('/')}/api/tags"
+        req = urllib.request.Request(tags_url, headers={"User-Agent": "Spectre-CLI"})
+        with urllib.request.urlopen(req, timeout=2) as response:
+            data = json.loads(response.read().decode())
+            return [m["name"] for m in data.get("models", [])]
+    except Exception:
+        return []
 
 
 def get_engine_info() -> dict:
