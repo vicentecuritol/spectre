@@ -9,6 +9,14 @@ if sys.platform == "win32":
     except AttributeError:
         pass
 
+from openai import (
+    APIConnectionError,
+    AuthenticationError,
+    NotFoundError,
+    RateLimitError,
+    OpenAIError,
+)
+
 from ai_engine import (
     ask_model,
     explain_command,
@@ -18,6 +26,30 @@ from ai_engine import (
 )
 from file_reader import get_relevant_context, reload_payloads, get_payload_stats
 from utils import copy_to_clipboard, execute_command_interactive
+
+
+def format_api_error(e: Exception, base_url: str, model: str) -> str:
+    """Traduce excepciones de la API a mensajes de diagnóstico amigables y accionables."""
+    if isinstance(e, APIConnectionError):
+        return (
+            f"\033[91m[!] Error de conexión con el endpoint ({base_url}).\033[0m\n"
+            f"\033[93m    Si usas Ollama local, asegúrate de que el servicio esté iniciado (ej: 'ollama serve').\033[0m"
+        )
+    if isinstance(e, NotFoundError):
+        return (
+            f"\033[91m[!] Modelo '{model}' no encontrado en el servidor ({base_url}).\033[0m\n"
+            f"\033[93m    Usa el comando :models para listar los modelos instalados localmente.\033[0m"
+        )
+    if isinstance(e, AuthenticationError):
+        return (
+            f"\033[91m[!] Error de autenticación (401) en {base_url}.\033[0m\n"
+            f"\033[93m    Verifica la clave OPENAI_API_KEY en tu archivo .env.\033[0m"
+        )
+    if isinstance(e, RateLimitError):
+        return f"\033[91m[!] Límite de tasa (429) excedido en {base_url}. Espera unos momentos antes de reintentar.\033[0m"
+    if isinstance(e, OpenAIError):
+        return f"\033[91m[!] Error de API ({type(e).__name__}): {e}\033[0m"
+    return f"\033[91m[!] Error inesperado: {e}\033[0m"
 
 
 def print_banner():
@@ -36,6 +68,7 @@ def print_banner():
 def print_help():
     print("\n\033[1;37m--- Comandos Internos de Spectre ---\033[0m")
     print("  \033[1;32m:why\033[0m / \033[1;32m:explain\033[0m Explica los flags y sintaxis del último comando generado")
+    print("  \033[1;32m? <comando>\033[0m       Explica directamente cualquier comando arbitrario")
     print("  \033[1;32m:exec\033[0m / \033[1;32m:run\033[0m    Ejecuta el último comando en tu terminal (con confirmación)")
     print("  \033[1;32m:models\033[0m           Lista los modelos descargados en tu Ollama local")
     print("  \033[1;32m:model <nombre>\033[0m   Cambia el modelo de IA activo en caliente")
@@ -48,20 +81,24 @@ def print_help():
 
 def execute_query(prompt: str, auto_copy: bool = True) -> str:
     """Procesa una consulta, muestra referencias y transmite la respuesta."""
+    info = get_engine_info()
     context, sources = get_relevant_context(prompt)
     if sources:
         sources_str = ", ".join(sources)
         print(f"\033[90m[Ref: {sources_str}]\033[0m")
 
-    response = ask_model(prompt, context)
-    generated = []
-    
-    for chunk in response:
-        content = chunk.choices[0].delta.content
-        if content:
-            print(content, end="", flush=True)
-            generated.append(content)
-    print()
+    try:
+        response = ask_model(prompt, context)
+        generated = []
+        for chunk in response:
+            content = chunk.choices[0].delta.content
+            if content:
+                print(content, end="", flush=True)
+                generated.append(content)
+        print()
+    except Exception as e:
+        print(format_api_error(e, str(info["base_url"]), str(info["model"])))
+        return ""
 
     full_output = "".join(generated).strip()
 
@@ -89,7 +126,7 @@ def run_interactive():
                 break
 
             # Ayuda
-            elif prompt in (":help", ":?"):
+            elif prompt in (":help", ":?", "?"):
                 print_help()
                 continue
 
@@ -120,9 +157,10 @@ def run_interactive():
             elif prompt == ":models":
                 models = list_available_models()
                 if models:
+                    current_model = str(get_engine_info()["model"])
                     print("\n\033[1;37mModelos disponibles en Ollama local:\033[0m")
                     for m in models:
-                        prefix = "->" if m == get_engine_info()["model"] else "  "
+                        prefix = "->" if m == current_model or m.startswith(current_model) else "  "
                         print(f"  {prefix} \033[33m{m}\033[0m")
                     print("\nUsa :model <nombre> para cambiar de modelo.")
                 else:
@@ -137,7 +175,7 @@ def run_interactive():
                     print(f"\033[32m[✓] Modelo activo cambiado a: {new_m}\033[0m")
                 continue
 
-            # Explicación del último comando
+            # Explicación del comando
             elif prompt in (":why", ":explain") or prompt.startswith("?"):
                 if prompt in (":why", ":explain"):
                     cmd_to_explain = last_command
@@ -145,15 +183,20 @@ def run_interactive():
                     cmd_to_explain = prompt.lstrip("?").strip() or last_command
 
                 if not cmd_to_explain:
-                    print("\033[93m[!] No hay ningún comando previo para explicar.\033[0m")
+                    print("\033[93m[!] No hay ningún comando previo para explicar. Usa '? <comando>' para explicar uno específico.\033[0m")
                     continue
+
+                info = get_engine_info()
                 print(f"\n\033[90mExplicando:\033[0m \033[32m{cmd_to_explain}\033[0m\n")
-                res = explain_command(cmd_to_explain)
-                for chunk in res:
-                    c = chunk.choices[0].delta.content
-                    if c:
-                        print(c, end="", flush=True)
-                print()
+                try:
+                    res = explain_command(cmd_to_explain)
+                    for chunk in res:
+                        c = chunk.choices[0].delta.content
+                        if c:
+                            print(c, end="", flush=True)
+                    print()
+                except Exception as e:
+                    print(format_api_error(e, str(info["base_url"]), str(info["model"])))
                 continue
 
             # Ejecutar último comando de forma segura
@@ -175,24 +218,19 @@ def run_interactive():
             print("\n\033[90mSaliendo de Spectre...\033[0m")
             break
         except Exception as e:
-            print(f"\n\033[91m[!] Error: {e}\033[0m")
+            print(f"\n\033[91m[!] Error inesperado: {e}\033[0m")
 
 
 def main():
     # Soporte para ejecución directa con argumentos (modo single-shot)
-    # Ejemplo: python main.py "escanear puertos 80 y 443 con nmap"
     if len(sys.argv) > 1:
         query = " ".join(sys.argv[1:]).strip()
         if query in ("-h", "--help", "help"):
             print("Uso: python main.py [consulta]")
             print("     python main.py           (inicia sesión interactiva)")
             sys.exit(0)
-        try:
-            execute_query(query, auto_copy=True)
-        except Exception as e:
-            print(f"\033[91m[!] Error: {e}\033[0m")
-            sys.exit(1)
-        sys.exit(0)
+        output = execute_query(query, auto_copy=True)
+        sys.exit(0 if output else 1)
 
     # Modo interactivo por defecto
     run_interactive()

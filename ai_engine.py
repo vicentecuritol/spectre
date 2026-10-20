@@ -1,19 +1,27 @@
 import os
 import json
 import urllib.request
+from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
+from typing import List, Dict, Tuple, Optional
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# Forzar carga de variables desde .env para evitar conflictos con terminal/sistema
-load_dotenv(override=True)
+# Resolución absoluta para garantizar que el archivo .env se cargue desde la raíz del proyecto
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(dotenv_path=BASE_DIR / ".env", override=True)
 
 BASE_URL = os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1")
 API_KEY = os.environ.get("OPENAI_API_KEY", "ollama")
 MODEL = os.environ.get("OPENAI_MODEL", "llama3")
 
+# Timeout por defecto para llamadas a la API (en segundos)
+REQUEST_TIMEOUT = float(os.environ.get("OPENAI_TIMEOUT", "30.0"))
+
 client = OpenAI(
     base_url=BASE_URL,
-    api_key=API_KEY
+    api_key=API_KEY,
+    timeout=REQUEST_TIMEOUT
 )
 
 SYS_PROMPT = (
@@ -24,6 +32,21 @@ SYS_PROMPT = (
     "Responde estrictamente en texto plano puro, sin comillas, sin backticks (`) y sin formato markdown. "
     "Cero explicaciones, cero saludos. Sé directo."
 )
+
+
+def _is_local_endpoint(url: str) -> bool:
+    """Verifica si la URL apunta a un servidor local (Ollama / llama.cpp)."""
+    try:
+        parts = urlsplit(url)
+        hostname = (parts.hostname or "").lower()
+        port = parts.port
+        return (
+            hostname in ("localhost", "127.0.0.1", "::1")
+            or port == 11434
+            or "11434" in url
+        )
+    except Exception:
+        return False
 
 
 def ask_model(prompt: str, context: str = ""):
@@ -49,8 +72,8 @@ def ask_model(prompt: str, context: str = ""):
         {"role": "user", "content": user_content}
     ]
 
-    # Optimizaciones específicas para Qwen2.5-Coder en inferencia local (Ollama)
-    is_local = any(host in BASE_URL.lower() for host in ("11434", "localhost", "127.0.0.1"))
+    # Optimizaciones específicas para Ollama en inferencia local
+    is_local = _is_local_endpoint(BASE_URL)
     extra_body = {
         "options": {
             "num_ctx": 4096,
@@ -93,28 +116,26 @@ def set_model(new_model: str) -> str:
     return MODEL
 
 
-def list_available_models() -> list[str]:
+def list_available_models() -> List[str]:
     """Consulta la API de Ollama para listar los modelos descargados localmente."""
-    is_local = any(host in BASE_URL.lower() for host in ("11434", "localhost", "127.0.0.1"))
-    if not is_local:
+    if not _is_local_endpoint(BASE_URL):
         return []
 
     try:
-        # La raíz de Ollama suele estar en http://localhost:11434
-        root_url = BASE_URL.replace("/v1", "")
-        tags_url = f"{root_url.rstrip('/')}/api/tags"
+        parts = urlsplit(BASE_URL)
+        tags_url = urlunsplit((parts.scheme or "http", parts.netloc, "/api/tags", "", ""))
         req = urllib.request.Request(tags_url, headers={"User-Agent": "Spectre-CLI"})
-        with urllib.request.urlopen(req, timeout=2) as response:
+        with urllib.request.urlopen(req, timeout=3.0) as response:
             data = json.loads(response.read().decode())
             return [m["name"] for m in data.get("models", [])]
     except Exception:
         return []
 
 
-def get_engine_info() -> dict:
+def get_engine_info() -> Dict[str, object]:
     """Retorna información del cliente configurado."""
     return {
         "base_url": BASE_URL,
         "model": MODEL,
-        "is_local": any(host in BASE_URL.lower() for host in ("11434", "localhost", "127.0.0.1"))
+        "is_local": _is_local_endpoint(BASE_URL)
     }
