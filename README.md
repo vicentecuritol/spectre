@@ -13,10 +13,11 @@ Spectre es una herramienta CLI minimalista y determinista diseñada para entrega
 - 📋 **Portapapeles Automático**: Copia inmediatamente el comando generado al portapapeles del sistema operativo (`Windows`, `macOS`, `Linux`) sin dependencias externas.
 - 🚀 **Modo Directo (Single-Shot) & Interactivo**: Úsalo en una sola línea `python main.py "orden"` o en una sesión continua interactiva.
 - 🧠 **Motor Micro-RAG en Memoria**: Indexación inteligente de archivos en `payloads/` con búsqueda por relevancia y poda dinámica. Si una orden no requiere notas, inyecta **0 tokens** (latencia 0 ms).
-- 💡 **Modo Explicación (`:why`)**: Desglosa cada parámetro y bandera del último comando generado cuando necesitas entender su funcionamiento.
-- 🛡️ **Ejecución Asistida Segura (`:exec`)**: Ejecuta el comando generado en tu terminal previa confirmación interactiva `[y/N]`.
+- 💡 **Modo Explicación (`:why` / `? <comando>`)**: Desglosa cada parámetro y bandera de cualquier comando cuando necesitas entender su funcionamiento.
+- 🛡️ **Ejecución Asistida Segura (`:exec`)**: Ejecuta el comando generado en tu terminal previa confirmación `[y/N]`. Cuenta con un **guardián heurístico de seguridad** que intercepta comandos destructivos (`rm -rf /`, `format`, `del /s /q c:`, fork bombs) exigiendo escribir `EJECUTAR`.
 - 🔄 **Gestión de Modelos en Caliente**: Lista (`:models`) y cambia (`:model <nombre>`) entre tus modelos locales de Ollama sin reiniciar la sesión.
 - 🔌 **Compatibilidad Universal**: Funciona tanto con modelos locales en **Ollama** (`Qwen2.5-Coder`, `Llama 3`, etc.) como proveedores remotos (**OpenRouter**, **OpenAI**).
+- 🧪 **Suite de Pruebas Unitarias Integrada**: 100% libre de dependencias pesadas de testing, usando `unittest` estándar.
 
 ---
 
@@ -98,6 +99,17 @@ Spectre segmenta estos archivos y realiza búsquedas semánticas por relevancia.
 
 ---
 
+## Pruebas Automatizadas
+
+Spectre cuenta con una suite completa de pruebas unitarias que cubren seguridad de rutas, heurísticas de comandos destructivos, indexación Micro-RAG y resiliencia ante errores de red.
+
+Para ejecutar todas las pruebas:
+```bash
+python -m unittest discover -s tests -v
+```
+
+---
+
 ## Estructura del Proyecto
 
 ```
@@ -106,10 +118,16 @@ spectre/
 ├── .gitignore          # Reglas de exclusión de git
 ├── ai_engine.py        # Motor de conexión, inferencia y explicación
 ├── file_reader.py      # Micro-RAG: indexador, segmentador y buscador selectivo
-├── main.py             # Interfaz CLI (modo directo e interactivo)
+├── main.py             # Interfaz CLI principal (modo directo e interactivo)
+├── spectre.py          # Punto de entrada alternativo
+├── spectre.bat         # Lanzador rápido para terminales Windows
 ├── payloads/           # Base de conocimiento local (.txt, .md)
-│   ├── apuntes_redes.txt
-│   └── guia_nmap.txt
+│   └── ejemplo.txt     # Archivo de ejemplo / plantilla
+├── tests/              # Suite de pruebas unitarias automatizadas
+│   ├── test_ai_engine.py
+│   ├── test_file_reader.py
+│   ├── test_main.py
+│   └── test_utils.py
 ├── README.md           # Documentación del proyecto
 ├── requirements.txt    # Dependencias de Python
 └── utils.py            # Utilidades de portapapeles y ejecución de sistema
